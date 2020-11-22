@@ -76,11 +76,13 @@ impl<'a, S: 'a> Register<'a, S> {
 pub fn with_lazy_fields<'a, S, F: FnOnce(&mut Register<'a, S>) -> S>(f: F) -> S {
     let holder = Arc::new(OnceCell::new());
     let (sender, receiver) = mpsc::channel();
-    let mut reg = Register {
-        holder: Arc::downgrade(&holder),
-        fields: sender,
+    let res = {
+        let mut reg = Register {
+            holder: Arc::downgrade(&holder),
+            fields: sender,
+        };
+        f(&mut reg)
     };
-    let res = f(&mut reg);
     holder
         .set(res)
         .unwrap_or_else(|_| panic!("Already initialized?"));
