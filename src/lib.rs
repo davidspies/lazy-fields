@@ -2,6 +2,7 @@
 
 use std::cell::Cell;
 use std::lazy::SyncOnceCell;
+use std::sync::mpsc;
 use std::sync::{Arc, Weak};
 
 pub struct LazyField<'a, S, T>(Arc<LazyFieldInner<'a, S, T>>);
@@ -14,9 +15,9 @@ struct LazyFieldInner<'a, S, T> {
 impl<S, T> LazyFieldInner<'_, S, T> {
     fn get(&self, holder: &S) -> &T {
         self.value.get_or_init(|| {
-            let f = self
-                .constructor
-                .replace(Box::new(|_| panic!("Already constructed! (Constructor panicked?)")));
+            let f = self.constructor.replace(Box::new(|_| {
+                panic!("Already constructed! (Constructor panicked?)")
+            }));
             f(holder)
         })
     }
@@ -45,23 +46,26 @@ impl<'a, S, T> IsField<S> for LazyFieldInner<'a, S, T> {
     }
 }
 
-pub struct Register<'a, S>(Vec<Weak<dyn IsField<S> + 'a>>);
+pub struct Register<'a, S>(mpsc::Sender<Weak<dyn IsField<S> + 'a>>);
 
 impl<'a, S: 'a> Register<'a, S> {
-    pub fn field<T: 'a, F: FnOnce(&S) -> T + 'a>(&mut self, f: F) -> LazyField<'a, S, T> {
+    pub fn field<T: 'a, F: FnOnce(&S) -> T + 'a>(&self, f: F) -> LazyField<'a, S, T> {
         let result = Arc::new(LazyFieldInner::<'a, S, T> {
             value: SyncOnceCell::new(),
             constructor: Cell::new(Box::new(f)),
         });
-        self.0.push(Arc::downgrade(&result) as Weak<dyn IsField<S>>);
+        self.0
+            .send(Arc::downgrade(&result) as Weak<dyn IsField<S>>)
+            .unwrap();
         LazyField(result)
     }
 }
 
-pub fn lazy<'a, S, F: FnOnce(&mut Register<'a, S>) -> S>(f: F) -> S {
-    let mut reg = Register(Vec::new());
+pub fn with_lazy_fields<'a, S, F: FnOnce(&mut Register<'a, S>) -> S>(f: F) -> S {
+    let (sender, receiver) = mpsc::channel();
+    let mut reg = Register(sender);
     let res = f(&mut reg);
-    for field in reg.0 {
+    for field in receiver {
         if let Some(x) = field.upgrade() {
             x.resolve(&res)
         }
