@@ -68,7 +68,7 @@ impl<'a, S: 'a> Register<'a, S> {
         });
         self.fields
             .send(Arc::downgrade(&result) as Weak<dyn IsField<S>>)
-            .unwrap();
+            .unwrap_or_else(|_| ());
         LazyField(result)
     }
 }
