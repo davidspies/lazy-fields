@@ -19,10 +19,7 @@ impl<S, T> LazyFieldInner<'_, S, T> {
             let f = self
                 .constructor
                 .replace(Box::new(|_| panic!("Field already constructed")));
-            let obj = &*self
-                .holder
-                .upgrade()
-                .unwrap_or_else(|| panic!("Object deleted"));
+            let obj = &*self.holder.upgrade().expect("Object deleted");
             match obj.get() {
                 Some(ref x) => f(x),
                 None => panic!("Object not constructed"),
@@ -40,7 +37,7 @@ impl<S, T> LazyField<'_, S, T> {
             .unwrap_or_else(|_| panic!("Other references to field being held?"))
             .value
             .into_inner()
-            .unwrap_or_else(|| panic!("Field uninitialized"))
+            .expect("Field uninitialized")
     }
 }
 
@@ -68,7 +65,7 @@ impl<'a, S: 'a> Register<'a, S> {
         });
         self.fields
             .send(Arc::downgrade(&result) as Weak<dyn IsField<S>>)
-            .unwrap_or_else(|_| ());
+            .unwrap_or_default();
         LazyField(result)
     }
 }
@@ -94,5 +91,5 @@ pub fn with_lazy_fields<'a, S, F: FnOnce(&mut Register<'a, S>) -> S>(f: F) -> S 
     Arc::try_unwrap(holder)
         .unwrap_or_else(|_| panic!("Other references to holder being held?"))
         .take()
-        .unwrap_or_else(|| panic!("Uninitialized after calling set?"))
+        .expect("Uninitialized after calling set?")
 }
