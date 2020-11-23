@@ -20,10 +20,7 @@ impl<S, T> LazyFieldInner<'_, S, T> {
                 .constructor
                 .replace(Box::new(|_| panic!("Field already constructed")));
             let obj = &*self.holder.upgrade().expect("Object deleted");
-            match obj.get() {
-                Some(ref x) => f(x),
-                None => panic!("Object not constructed"),
-            }
+            obj.get().map(f).expect("Object not constructed")
         })
     }
 }
